@@ -59,13 +59,19 @@ Add an empty div where you want the verification widget:
     const container = document.getElementById('capture-slot');
     container.innerHTML = html;
     
-    // Execute scripts (important for frameworks that strip scripts)
+    // Execute scripts - both methods work, eval is simpler:
+    // Method 1 (simpler):
     const scripts = container.querySelectorAll('script');
-    scripts.forEach((oldScript) => {
-      const newScript = document.createElement('script');
-      newScript.textContent = oldScript.textContent;
-      oldScript.parentNode.replaceChild(newScript, oldScript);
+    scripts.forEach((script) => {
+      eval(script.innerHTML);
     });
+    
+    // Method 2 (alternative):
+    // scripts.forEach((oldScript) => {
+    //   const newScript = document.createElement('script');
+    //   newScript.textContent = oldScript.textContent;
+    //   oldScript.parentNode.replaceChild(newScript, oldScript);
+    // });
   } catch (error) {
     console.error('Error loading widget:', error);
   }
@@ -80,42 +86,106 @@ Add an empty div where you want the verification widget:
 **React with useRef (recommended):**
 
 ```javascript
-import { useEffect, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 function MyForm() {
   const widgetContainerRef = useRef(null);
+  const [captureToken, setCaptureToken] = useState(null);
+  const [widgetLoading, setWidgetLoading] = useState(true);
+  const [widgetError, setWidgetError] = useState(null);
+  
+  const loadWidget = async () => {
+    // Use environment variable (adjust for your build tool)
+    // Vite: import.meta.env.VITE_CATALYST_SITE_KEY
+    // CRA: process.env.REACT_APP_CATALYST_SITE_KEY
+    const siteKey = import.meta.env.VITE_CATALYST_SITE_KEY;
+    
+    if (!siteKey) {
+      setWidgetError('Missing site key');
+      setWidgetLoading(false);
+      return;
+    }
+    
+    try {
+      setWidgetLoading(true);
+      setWidgetError(null);
+      
+      const response = await fetch(
+        `/api/catalyst/v1/embed?siteKey=${siteKey}&target=%23capture-slot`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load widget: ${response.status}`);
+      }
+      
+      const html = await response.text();
+      
+      const container = widgetContainerRef.current;
+      if (!container) {
+        throw new Error('Widget container ref not ready');
+      }
+      
+      container.innerHTML = html;
+      
+      // Execute scripts using eval (works reliably in all scenarios)
+      const scripts = container.querySelectorAll('script');
+      scripts.forEach((script) => {
+        eval(script.innerHTML);
+      });
+      
+      setWidgetLoading(false);
+    } catch (error) {
+      console.error('Error loading widget:', error);
+      setWidgetError(error.message);
+      setWidgetLoading(false);
+    }
+  };
   
   useEffect(() => {
-    const loadWidget = async () => {
-      try {
-        const response = await fetch('/api/catalyst/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
-        const html = await response.text();
-        
-        const container = widgetContainerRef.current;
-        if (!container) return;
-        
-        container.innerHTML = html;
-        
-        // Extract and execute scripts manually
-        const scripts = container.querySelectorAll('script');
-        scripts.forEach((oldScript) => {
-          const newScript = document.createElement('script');
-          newScript.textContent = oldScript.textContent;
-          oldScript.parentNode.replaceChild(newScript, oldScript);
-        });
-      } catch (error) {
-        console.error('Error loading widget:', error);
+    // Listen for verification events
+    const handleMessage = (event) => {
+      if (event.data?.type === 'catalyst-verified') {
+        setCaptureToken(event.data.token);
       }
     };
     
+    window.addEventListener('message', handleMessage);
     loadWidget();
+    
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
   
-  return <div ref={widgetContainerRef} id="capture-slot"></div>;
+  return (
+    <div>
+      {widgetLoading && <p>Loading verification...</p>}
+      {widgetError && <p style={{color: 'red'}}>Error: {widgetError}</p>}
+      <div ref={widgetContainerRef} id="capture-slot"></div>
+      {captureToken && <p style={{color: 'green'}}>✓ Verified!</p>}
+    </div>
+  );
 }
 ```
 
 **Why useRef?** While not strictly required (the widget no longer removes DOM elements), using `useRef` is still recommended as best practice. It clearly signals to React that this part of the DOM is managed by external code, preventing potential conflicts with React's reconciliation.
+
+**Reloading widget after submission:** If you want to reset the widget after successful form submission, clear the container and call `loadWidget()` again:
+
+```javascript
+// After successful submission
+setSubmitStatus('success');
+setEmail('');
+setCaptureToken(null);
+
+// Reset widget after delay
+setTimeout(() => {
+  if (widgetContainerRef.current) {
+    widgetContainerRef.current.innerHTML = ''; // Clear old widget
+  }
+  loadWidget(); // Reload fresh widget
+}, 3000);
+```
 
 **Vue / Angular:**
 
@@ -128,12 +198,10 @@ const loadWidget = async () => {
     const container = document.getElementById('capture-slot');
     container.innerHTML = html;
     
-    // Extract and execute scripts manually
+    // Execute scripts using eval
     const scripts = container.querySelectorAll('script');
-    scripts.forEach((oldScript) => {
-      const newScript = document.createElement('script');
-      newScript.textContent = oldScript.textContent;
-      oldScript.parentNode.replaceChild(newScript, oldScript);
+    scripts.forEach((script) => {
+      eval(script.innerHTML);
     });
   } catch (error) {
     console.error('Error loading widget:', error);
