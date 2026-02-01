@@ -225,7 +225,7 @@ app.get("/v1/embed", (req, res) => {
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'cc-button';
-      button.textContent = 'Verify you're human';
+      button.textContent = 'Verify human';
       button.style.cssText = 'padding: 0; background: none; color: #737373; border: none; cursor: pointer; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; transition: color 0.2s;';
       
       var status = document.createElement('span');
@@ -282,7 +282,7 @@ app.get("/v1/embed", (req, res) => {
         .catch(function(err) {
           console.error('Verification error:', err);
           button.disabled = false;
-          button.textContent = 'Verify you're human (retry)';
+          button.textContent = 'Verify human (retry)';
           button.style.color = '#737373';
           button.style.cursor = 'pointer';
           button.style.textDecoration = 'underline';
