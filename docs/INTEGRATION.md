@@ -6,13 +6,19 @@ This document explains how to embed and verify Catalyst Capture on your site to 
 
 **User flow:** User clicks "Verify" → Button turns green → User clicks "Submit" → Form submitted
 
+**What you need to implement:**
+1. ✅ Add widget container div (`<div id="capture-slot"></div>`)
+2. ✅ Fetch widget from `/v1/embed` and inject into div (widget handles verification)
+3. ✅ **YOU MUST ADD:** JavaScript to listen for `catalyst-verified` event
+4. ✅ **YOU MUST ADD:** JavaScript to handle form submission with token
+5. ✅ Start with submit button disabled, enable only after verification
+
 **Implementation steps:**
 1. Get a site key (contact admin)
 2. Add widget div to your HTML
-3. Load widget via fetch
-4. Disable your submit button until verified
-5. Listen for `catalyst-verified` event to enable submit
-6. Submit form with token
+3. Load widget via fetch (returns ready-to-use HTML)
+4. Add event listener for `catalyst-verified` to enable submit button
+5. Add form submit handler to verify token and submit data
 
 ## What You'll Get
 
@@ -40,7 +46,7 @@ Add an empty div where you want the verification widget:
 
 ## Step 2: Load the Widget
 
-Fetch and inject the widget HTML into your page:
+**Important:** The `/v1/embed` endpoint returns **complete, ready-to-use HTML** with all JavaScript included. You just need to fetch it and inject it into your page.
 
 ```html
 <script>
@@ -56,9 +62,17 @@ Fetch and inject the widget HTML into your page:
 </script>
 ```
 
-**What happens:** The API returns self-executing HTML that creates a "Verify" button. When clicked, it calls `/v1/challenge` to get a token.
+**What happens:** 
+1. The API returns self-executing HTML that creates a styled "Verify" button
+2. When user clicks it, the widget calls `/v1/challenge` automatically
+3. On success, the button turns green and emits a `catalyst-verified` event
+4. **The widget is fully functional** - you just need to listen for the event (Step 3)
+
+**If using a proxy:** Replace `https://captured.thecatalyst.dev` with your proxy path (e.g., `/api/catalyst`)
 
 ## Step 3: Listen for Verification
+
+**Critical:** The widget works on its own, but YOU must add JavaScript to listen for its success event and enable your submit button.
 
 The widget emits a `postMessage` event when verification succeeds:
 
@@ -77,7 +91,12 @@ window.addEventListener('message', (event) => {
 });
 ```
 
-**Important:** Store the token - you'll need it for submission.
+**This is required!** Without this listener:
+- ❌ Your submit button stays disabled
+- ❌ You won't have the token for submission
+- ❌ The form won't work
+
+**Important:** Store the token - you'll need it for submission in Step 4.
 
 ## Step 4: Submit with Token
 
@@ -452,21 +471,31 @@ Submit your form data after verification.
 
 **Widget doesn't load:**
 - Check browser console for errors
-- Verify CORS is configured for your domain
+- Verify CORS is configured for your domain (contact admin)
 - Confirm site key is correct
+- Check network tab - should see successful request to `/v1/embed`
 
-**Button stays disabled:**
-- Check if `catalyst-verified` event fires (add `console.log`)
+**Button stays disabled after clicking Verify:**
+- ✅ Did you add the `window.addEventListener('message')` code? **This is required!**
+- Check if `catalyst-verified` event fires: `console.log('Event:', event.data)` in the listener
 - Ensure you're listening for `postMessage` events
-- Hard refresh browser (`Ctrl+Shift+R`)
+- Hard refresh browser (`Ctrl+Shift+R`) to clear cache
+- Check console for JavaScript errors
+
+**Widget loads but "Verify" button does nothing:**
+- Check network tab when clicking - should see POST to `/v1/challenge`
+- Check console for errors
+- Verify your proxy (if using one) forwards requests correctly
 
 **Submission fails:**
-- Token might be expired (short-lived)
+- Token might be expired (short-lived, ~5 minutes)
 - Honeypot field might be filled (bot detected)
-- Check API response for specific error
+- Check API response in network tab for specific error
+- Verify you're using `accessToken` (from verify response) not raw token
 
 **CORS errors:**
 - Contact admin to add your domain to allowed origins
+- Applies to: `www.yourdomain.com`, `yourdomain.com`, `https://yourdomain.com`
 
 ---
 
