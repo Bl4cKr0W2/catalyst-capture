@@ -194,20 +194,88 @@ app.get("/v1/embed", (req, res) => {
   }
 
   const target = req.query.target || "#capture-slot";
+  const apiBase = `${req.protocol}://${req.get('host')}`;
+  
   const html = `
   <div class="catalyst-capture" data-site-key="${siteKey}">
     <div class="cc-widget">
-      <button type="button" class="cc-button">Verify</button>
+      <button type="button" class="cc-button" onclick="window.catalystVerify_${siteKey.replace(/[^a-z0-9]/gi, '')}()">Verify</button>
       <input type="hidden" class="cc-token" />
     </div>
   </div>
   <script>
     (function(){
+      var siteKey = "${siteKey}";
+      var apiBase = "${apiBase}";
       var root = document.querySelector("${target}") || document.currentScript.parentElement;
       if (!root) return;
-      root.innerHTML = root.innerHTML + ${JSON.stringify(
-        "<div class=\"cc-micro-ui\">\n  <button type=\"button\" class=\"cc-button\">Verify</button>\n  <input type=\"hidden\" class=\"cc-token\" />\n</div>"
-      )};
+      
+      // Create the widget HTML
+      var widget = document.createElement('div');
+      widget.className = 'cc-micro-ui';
+      widget.style.cssText = 'margin: 10px 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb;';
+      
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'cc-button';
+      button.textContent = 'Verify';
+      button.style.cssText = 'padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;';
+      
+      var status = document.createElement('span');
+      status.className = 'cc-status';
+      status.style.cssText = 'margin-left: 10px; font-size: 14px; color: #6b7280;';
+      
+      widget.appendChild(button);
+      widget.appendChild(status);
+      root.appendChild(widget);
+      
+      // Handle verification
+      window['catalystVerify_' + siteKey.replace(/[^a-z0-9]/gi, '')] = function() {
+        button.disabled = true;
+        button.textContent = 'Verifying...';
+        status.textContent = '';
+        
+        fetch(apiBase + '/v1/challenge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteKey: siteKey })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.ok && data.token) {
+            button.textContent = '✓ Verified';
+            button.style.background = '#10b981';
+            status.textContent = '✓ Success';
+            status.style.color = '#10b981';
+            
+            // Store token
+            var input = root.querySelector('.cc-token');
+            if (input) input.value = data.token;
+            
+            // Emit event
+            if (window.postMessage) {
+              window.postMessage({
+                type: 'catalyst-verified',
+                token: data.token,
+                siteKey: siteKey
+              }, '*');
+            }
+          } else {
+            throw new Error('Verification failed');
+          }
+        })
+        .catch(function(err) {
+          console.error('Verification error:', err);
+          button.disabled = false;
+          button.textContent = 'Verify (retry)';
+          button.style.background = '#ef4444';
+          status.textContent = '✗ Failed';
+          status.style.color = '#ef4444';
+        });
+      };
+      
+      // Auto-click for convenience (optional)
+      button.onclick = window['catalystVerify_' + siteKey.replace(/[^a-z0-9]/gi, '')];
     })();
   </script>
   `;

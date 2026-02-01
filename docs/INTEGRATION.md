@@ -18,39 +18,59 @@ Catalyst Capture provides a turnstile-like widget and token verification flow to
 - A secret key (server-only)
 - HTTPS access to the API: https://captured.thecatalyst.dev
 
-## Step 1: Add the Client Snippet
+## Step 1: Add the Widget to Your HTML
 
-Add this to your HTML (replace `YOUR_SITE_KEY`):
+Add this to your HTML where you want the verification widget (replace `YOUR_SITE_KEY`):
 
 ```html
 <div id="capture-slot"></div>
-<script
-  src="https://captured.thecatalyst.dev/v1/widget.js"
-  data-site-key="YOUR_SITE_KEY"
-  data-target="#capture-slot"
-  async
-></script>
 ```
 
-When the user completes the challenge, the widget will emit a token. The script requests compiled widget HTML from the API and injects it into `data-target`.
+Then fetch and inject the widget HTML:
 
-### Embed HTML (Behind the Scenes)
-
-The snippet calls:
-
-```http
-GET https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot
+```html
+<script>
+(async function() {
+  try {
+    const response = await fetch('https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
+    const html = await response.text();
+    document.getElementById('capture-slot').innerHTML = html;
+  } catch (error) {
+    console.error('Error loading Catalyst widget:', error);
+  }
+})();
+</script>
 ```
 
-The response is HTML for the micro-ui widget. You generally do not need to call this directly.
+**Alternative**: Load directly in the div (the embed endpoint returns self-executing HTML):
 
-## Step 2: Collect the Token
+```html
+<div id="capture-slot">
+  <!-- Widget will be injected here -->
+</div>
+<script>
+fetch('https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot')
+  .then(r => r.text())
+  .then(html => document.getElementById('capture-slot').innerHTML = html);
+</script>
+```
 
-Example (pseudo):
+## Step 2: Listen for Verification Events
+
+The widget emits events via `postMessage` when the user completes verification:
 
 ```js
-window.CatalystCapture.on("verified", (token) => {
-  document.querySelector("#captureToken").value = token;
+let captureToken = null;
+
+window.addEventListener('message', (event) => {
+  // Verify event is from your widget
+  if (event.data?.type === 'catalyst-verified') {
+    captureToken = event.data.token;
+    console.log('Verification complete:', captureToken);
+    
+    // Enable your form submit button
+    document.getElementById('submit-button').disabled = false;
+  }
 });
 ```
 
@@ -153,6 +173,109 @@ If you must integrate from a UI-only app (no server), use these safeguards:
 - Require JS and keep tokens short-lived.
 - Add honeypot fields and client-side timing checks.
 - Log suspicious submissions for manual review.
+
+## Complete Working Example (Client-Side Only)
+
+```html
+<form id="waitlist-form">
+  <input type="email" id="email" placeholder="Your email" required />
+  <input type="text" name="honeypot" autocomplete="off" tabindex="-1" class="hidden" />
+  
+  <div id="capture-slot"></div>
+  
+  <button type="submit" id="submit-btn" disabled>
+    Join Waitlist
+  </button>
+  
+  <p id="status"></p>
+</form>
+
+<script>
+  // Load the widget
+  (async function() {
+    try {
+      const response = await fetch('https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
+      const html = await response.text();
+      document.getElementById('capture-slot').innerHTML = html;
+    } catch (error) {
+      console.error('Error loading widget:', error);
+    }
+  })();
+  
+  // Listen for verification
+  let captureToken = null;
+  
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'catalyst-verified') {
+      captureToken = event.data.token;
+      document.getElementById('submit-btn').disabled = false;
+      document.getElementById('status').textContent = '✓ Verified!';
+    }
+  });
+  
+  // Handle form submission
+  document.getElementById('waitlist-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!captureToken) {
+      alert('Please verify first');
+      return;
+    }
+    
+    const email = document.getElementById('email').value;
+    const honeypot = document.querySelector('[name="honeypot"]').value;
+    
+    try {
+      // Verify the token
+      const verifyResponse = await fetch('https://captured.thecatalyst.dev/v1/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteKey: 'YOUR_SITE_KEY',
+          token: captureToken,
+          origin: window.location.origin
+        })
+      });
+      
+      const verifyResult = await verifyResponse.json();
+      
+      if (!verifyResult.ok) {
+        alert('Verification failed');
+        return;
+      }
+      
+      // Submit the payload
+      const submitResponse = await fetch('https://captured.thecatalyst.dev/v1/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteKey: 'YOUR_SITE_KEY',
+          accessToken: verifyResult.accessToken,
+          honeypot: honeypot,
+          payload: {
+            email: email,
+            timestamp: new Date().toISOString()
+          }
+        })
+      });
+      
+      const submitResult = await submitResponse.json();
+      
+      if (submitResult.ok) {
+        document.getElementById('status').textContent = '✓ Success!';
+        e.target.reset();
+        document.getElementById('submit-btn').disabled = true;
+        captureToken = null;
+      } else {
+        alert('Submission failed');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('An error occurred');
+    }
+  });
+</script>
+```
 
 ## Support
 
