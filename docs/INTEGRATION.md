@@ -1,32 +1,46 @@
 # Catalyst Capture – Integration Guide
 
-This document is intended to be shared with other projects that need to embed and verify Catalyst Capture on their sites.
+This document explains how to embed and verify Catalyst Capture on your site to protect forms from bots.
 
-## Overview
+## Quick Start
 
-Catalyst Capture provides a turnstile-like widget and token verification flow to protect form submissions from bots. It replaces third-party form gateways (like Formspark) by storing JSON payloads directly in Catalyst Capture. You will:
+**User flow:** User clicks "Verify" → Button turns green → User clicks "Submit" → Form submitted
 
-1. Obtain a **site key** (public) and **secret key** (server-only).
-2. Embed the **client snippet** on your page.
-3. Use the widget to generate a **token**.
-4. Verify that token on your server.
-5. Submit the JSON payload to Catalyst Capture.
+**Implementation steps:**
+1. Get a site key (contact admin)
+2. Add widget div to your HTML
+3. Load widget via fetch
+4. Disable your submit button until verified
+5. Listen for `catalyst-verified` event to enable submit
+6. Submit form with token
 
-## Requirements
+## What You'll Get
 
-- A site key (public)
-- A secret key (server-only)
-- HTTPS access to the API: https://captured.thecatalyst.dev
+- **Site Key** (public) - Use in browser
+- **Secret Key** (server-only) - Never expose in browser
+- **API Access** - https://captured.thecatalyst.dev
 
-## Step 1: Add the Widget to Your HTML
+---
 
-Add this to your HTML where you want the verification widget (replace `YOUR_SITE_KEY`):
+## Step 1: Add Widget Container
+
+Add an empty div where you want the verification widget:
 
 ```html
-<div id="capture-slot"></div>
+<form id="my-form">
+  <input type="email" id="email" required />
+  
+  <!-- Widget loads here -->
+  <div id="capture-slot"></div>
+  
+  <!-- Disabled until verification -->
+  <button type="submit" id="submit-btn" disabled>Submit</button>
+</form>
 ```
 
-Then fetch and inject the widget HTML:
+## Step 2: Load the Widget
+
+Fetch and inject the widget HTML into your page:
 
 ```html
 <script>
@@ -36,50 +50,112 @@ Then fetch and inject the widget HTML:
     const html = await response.text();
     document.getElementById('capture-slot').innerHTML = html;
   } catch (error) {
-    console.error('Error loading Catalyst widget:', error);
+    console.error('Error loading widget:', error);
   }
 })();
 </script>
 ```
 
-**Alternative**: Load directly in the div (the embed endpoint returns self-executing HTML):
+**What happens:** The API returns self-executing HTML that creates a "Verify" button. When clicked, it calls `/v1/challenge` to get a token.
 
-```html
-<div id="capture-slot">
-  <!-- Widget will be injected here -->
-</div>
-<script>
-fetch('https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot')
-  .then(r => r.text())
-  .then(html => document.getElementById('capture-slot').innerHTML = html);
-</script>
-```
+## Step 3: Listen for Verification
 
-## Step 2: Listen for Verification Events
-
-The widget emits events via `postMessage` when the user completes verification:
+The widget emits a `postMessage` event when verification succeeds:
 
 ```js
 let captureToken = null;
 
 window.addEventListener('message', (event) => {
-  // Verify event is from your widget
   if (event.data?.type === 'catalyst-verified') {
     captureToken = event.data.token;
-    console.log('Verification complete:', captureToken);
     
-    // Enable your form submit button
-    document.getElementById('submit-button').disabled = false;
+    // Enable your submit button
+    document.getElementById('submit-btn').disabled = false;
+    
+    console.log('Verified! Token:', captureToken);
   }
 });
 ```
 
-Include the token in your form submission.
+**Important:** Store the token - you'll need it for submission.
 
-## Step 3: Verify Token (Server-Side)
+## Step 4: Submit with Token
 
-Use your secret key on your server to verify the token.
+### Client-Side Only (No Backend)
 
+If you don't have a backend, verify and submit directly from the browser:
+
+```js
+document.getElementById('my-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  if (!captureToken) {
+    alert('Please verify first');
+    return;
+  }
+  
+  try {
+    // 1. Verify the token
+    const verifyRes = await fetch('https://captured.thecatalyst.dev/v1/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        siteKey: 'YOUR_SITE_KEY',
+        token: captureToken,
+        origin: window.location.origin
+      })
+    });
+    
+    const verifyResult = await verifyRes.json();
+    if (!verifyResult.ok) throw new Error('Verification failed');
+    
+    // 2. Submit your data
+    const submitRes = await fetch('https://captured.thecatalyst.dev/v1/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        siteKey: 'YOUR_SITE_KEY',
+        accessToken: verifyResult.accessToken,
+        honeypot: '', // Keep empty
+        payload: {
+          email: document.getElementById('email').value,
+          // ... any other data
+        }
+      })
+    });
+    
+    const result = await submitRes.json();
+    if (result.ok) {
+      alert('Success!');
+    }
+  } catch (error) {
+    console.error(error);
+    alert('Submission failed');
+  }
+});
+```
+
+### Server-Side (Recommended)
+
+Send the token to your backend and verify there:
+
+**Frontend:**
+```js
+document.getElementById('my-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  await fetch('/api/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: document.getElementById('email').value,
+      captureToken: captureToken
+    })
+  });
+});
+```
+
+**Backend:**
 ```http
 POST https://captured.thecatalyst.dev/v1/verify
 Content-Type: application/json
@@ -87,64 +163,282 @@ Content-Type: application/json
 {
   "siteKey": "YOUR_SITE_KEY",
   "secretKey": "YOUR_SECRET_KEY",
-  "token": "TOKEN_FROM_WIDGET",
+  "token": "TOKEN_FROM_CLIENT",
   "ip": "USER_IP",
   "ua": "USER_AGENT",
   "origin": "https://your-site.com"
 }
 ```
 
-Response example:
-
+Response:
 ```json
 {
   "ok": true,
   "score": 0.93,
   "reason": "human",
-  "accessToken": "ACCESS_TOKEN_IF_ENABLED"
+  "accessToken": "acc_..."
 }
 ```
 
-Only proceed if `ok` is true.
+Only proceed if `ok` is `true`.
 
-### Server-Side (Symmetric Key) Verification
+---
 
-If you want a non-asymmetric, server-only verification, use the site **secret key**:
+## Complete Working Example
 
-```http
-POST https://captured.thecatalyst.dev/v1/verify-server
-Content-Type: application/json
-x-site-secret: YOUR_SECRET_KEY
+This is a **copy-paste ready** example that works without a backend:
 
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Waitlist Form</title>
+</head>
+<body>
+  <form id="waitlist-form">
+    <h2>Join Waitlist</h2>
+    
+    <input 
+      type="email" 
+      id="email" 
+      placeholder="Your email" 
+      required 
+    />
+    
+    <!-- Hidden honeypot field -->
+    <input 
+      type="text" 
+      name="honeypot" 
+      autocomplete="off" 
+      tabindex="-1" 
+      style="display:none"
+    />
+    
+    <!-- Widget container -->
+    <div id="capture-slot"></div>
+    
+    <!-- Submit button (disabled initially) -->
+    <button 
+      type="submit" 
+      id="submit-btn" 
+      disabled
+    >
+      Join Waitlist
+    </button>
+    
+    <p id="status"></p>
+  </form>
+
+  <script>
+    // 1. Load the widget
+    (async function() {
+      try {
+        const response = await fetch('https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
+        const html = await response.text();
+        document.getElementById('capture-slot').innerHTML = html;
+      } catch (error) {
+        console.error('Error loading widget:', error);
+        document.getElementById('status').textContent = 'Failed to load verification';
+      }
+    })();
+    
+    // 2. Listen for verification
+    let captureToken = null;
+    
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'catalyst-verified') {
+        captureToken = event.data.token;
+        document.getElementById('submit-btn').disabled = false;
+        document.getElementById('status').textContent = '✓ Verified! Click "Join Waitlist"';
+        document.getElementById('status').style.color = 'green';
+      }
+    });
+    
+    // 3. Handle form submission
+    document.getElementById('waitlist-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      if (!captureToken) {
+        alert('Please click "Verify" first');
+        return;
+      }
+      
+      const submitBtn = document.getElementById('submit-btn');
+      const statusEl = document.getElementById('status');
+      const email = document.getElementById('email').value;
+      const honeypot = document.querySelector('[name="honeypot"]').value;
+      
+      // Disable button during submission
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+      statusEl.textContent = 'Processing...';
+      
+      try {
+        // Verify token
+        const verifyRes = await fetch('https://captured.thecatalyst.dev/v1/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteKey: 'YOUR_SITE_KEY',
+            token: captureToken,
+            origin: window.location.origin
+          })
+        });
+        
+        const verifyResult = await verifyRes.json();
+        
+        if (!verifyResult.ok) {
+          throw new Error('Verification failed');
+        }
+        
+        // Submit data
+        const submitRes = await fetch('https://captured.thecatalyst.dev/v1/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteKey: 'YOUR_SITE_KEY',
+            accessToken: verifyResult.accessToken,
+            honeypot: honeypot,
+            payload: {
+              email: email,
+              source: 'waitlist',
+              timestamp: new Date().toISOString()
+            }
+          })
+        });
+        
+        const submitResult = await submitRes.json();
+        
+        if (submitResult.ok) {
+          statusEl.textContent = '🎉 Success! You\'re on the waitlist.';
+          statusEl.style.color = 'green';
+          document.getElementById('waitlist-form').reset();
+          submitBtn.textContent = 'Joined!';
+          
+          // Reset after 3 seconds
+          setTimeout(() => {
+            submitBtn.textContent = 'Join Waitlist';
+            submitBtn.disabled = true;
+            statusEl.textContent = '';
+            captureToken = null;
+          }, 3000);
+        } else {
+          throw new Error(submitResult.error || 'Submission failed');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        statusEl.textContent = '✗ ' + error.message;
+        statusEl.style.color = 'red';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Try Again';
+      }
+    });
+  </script>
+</body>
+</html>
+```
+
+**Just replace `YOUR_SITE_KEY` with your actual site key and it works!**
+
+---
+
+## Security Best Practices
+
+**Essential:**
+- ✅ Start with submit button **disabled**
+- ✅ Only enable after receiving `catalyst-verified` event
+- ✅ Add hidden honeypot field (bots fill it, humans don't)
+- ✅ Never expose secret key in browser
+- ✅ Use HTTPS
+
+**Client-Side Only Limitations:**
+- ⚠️ Less secure than server-side verification
+- ⚠️ Secret key can't be used (browser visible)
+- ⚠️ Relies on API rate limits for protection
+
+**Recommended for Production:**
+- ✅ Verify tokens on your backend
+- ✅ Use secret key server-side only
+- ✅ Add server-side rate limiting
+- ✅ Log suspicious submissions
+
+---
+
+## API Endpoints Reference
+
+### `GET /v1/embed`
+Returns self-executing HTML widget.
+
+**Query params:**
+- `siteKey` (required) - Your public site key
+- `target` (optional) - CSS selector for container, default: `#capture-slot`
+
+**Response:** HTML with embedded JavaScript
+
+---
+
+### `POST /v1/challenge`
+Called automatically by the widget when user clicks "Verify".
+
+**Request:**
+```json
 {
-  "siteKey": "YOUR_SITE_KEY",
-  "token": "TOKEN_FROM_WIDGET"
+  "siteKey": "YOUR_SITE_KEY"
 }
 ```
 
-## Step 4: Submit Payload
+**Response:**
+```json
+{
+  "ok": true,
+  "token": "tok_...",
+  "challengeId": "chl_..."
+}
+```
 
-Submit your JSON payload (any shape is allowed):
+---
 
-```http
-POST https://captured.thecatalyst.dev/v1/submit
-Content-Type: application/json
+### `POST /v1/verify`
+Verify a token (can be called from browser or server).
 
+**Request:**
+```json
 {
   "siteKey": "YOUR_SITE_KEY",
-  "accessToken": "ACCESS_TOKEN_FROM_VERIFY",
+  "token": "tok_...",
+  "secretKey": "YOUR_SECRET_KEY",  // Optional, use on server only
+  "origin": "https://your-site.com"
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "score": 0.99,
+  "reason": "verified",
+  "accessToken": "acc_..."
+}
+```
+
+---
+
+### `POST /v1/submit`
+Submit your form data after verification.
+
+**Request:**
+```json
+{
+  "siteKey": "YOUR_SITE_KEY",
+  "accessToken": "acc_...",
   "honeypot": "",
-  "fingerprint": "optional-client-hash",
   "payload": {
-    "name": "Ada",
-    "email": "ada@example.com",
-    "message": "Hello"
+    // Any JSON data you want to store
   }
 }
 ```
 
-Response:
-
+**Response:**
 ```json
 {
   "ok": true,
@@ -152,131 +446,36 @@ Response:
 }
 ```
 
-## Security Notes
+---
 
-- **Never expose your secret key in the browser.**
-- Always verify tokens on your server.
-- Keep your server clock accurate for token expiration.
-- Use IP gating and rate limits on your site as a second layer.
-- Add a hidden **honeypot** field and leave it empty. If filled, the API rejects the submission.
-- Tokens are short-lived. Submitting too quickly after challenge can be rejected.
-- Prefer `accessToken` for submit calls.
+## Troubleshooting
 
-## UI-Only Best Practices
+**Widget doesn't load:**
+- Check browser console for errors
+- Verify CORS is configured for your domain
+- Confirm site key is correct
 
-If you must integrate from a UI-only app (no server), use these safeguards:
+**Button stays disabled:**
+- Check if `catalyst-verified` event fires (add `console.log`)
+- Ensure you're listening for `postMessage` events
+- Hard refresh browser (`Ctrl+Shift+R`)
 
-- **Do not** call `/v1/verify-server` (it requires a secret key).
-- Use `/v1/verify` and treat it as **low-trust** validation.
-- Submit with `accessToken` from `/v1/verify` instead of raw token.
-- Keep rate limits conservative and use IP gating on the API.
-- Require JS and keep tokens short-lived.
-- Add honeypot fields and client-side timing checks.
-- Log suspicious submissions for manual review.
+**Submission fails:**
+- Token might be expired (short-lived)
+- Honeypot field might be filled (bot detected)
+- Check API response for specific error
 
-## Complete Working Example (Client-Side Only)
+**CORS errors:**
+- Contact admin to add your domain to allowed origins
 
-```html
-<form id="waitlist-form">
-  <input type="email" id="email" placeholder="Your email" required />
-  <input type="text" name="honeypot" autocomplete="off" tabindex="-1" class="hidden" />
-  
-  <div id="capture-slot"></div>
-  
-  <button type="submit" id="submit-btn" disabled>
-    Join Waitlist
-  </button>
-  
-  <p id="status"></p>
-</form>
+---
 
-<script>
-  // Load the widget
-  (async function() {
-    try {
-      const response = await fetch('https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
-      const html = await response.text();
-      document.getElementById('capture-slot').innerHTML = html;
-    } catch (error) {
-      console.error('Error loading widget:', error);
-    }
-  })();
-  
-  // Listen for verification
-  let captureToken = null;
-  
-  window.addEventListener('message', (event) => {
-    if (event.data?.type === 'catalyst-verified') {
-      captureToken = event.data.token;
-      document.getElementById('submit-btn').disabled = false;
-      document.getElementById('status').textContent = '✓ Verified!';
-    }
-  });
-  
-  // Handle form submission
-  document.getElementById('waitlist-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    if (!captureToken) {
-      alert('Please verify first');
-      return;
-    }
-    
-    const email = document.getElementById('email').value;
-    const honeypot = document.querySelector('[name="honeypot"]').value;
-    
-    try {
-      // Verify the token
-      const verifyResponse = await fetch('https://captured.thecatalyst.dev/v1/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          siteKey: 'YOUR_SITE_KEY',
-          token: captureToken,
-          origin: window.location.origin
-        })
-      });
-      
-      const verifyResult = await verifyResponse.json();
-      
-      if (!verifyResult.ok) {
-        alert('Verification failed');
-        return;
-      }
-      
-      // Submit the payload
-      const submitResponse = await fetch('https://captured.thecatalyst.dev/v1/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          siteKey: 'YOUR_SITE_KEY',
-          accessToken: verifyResult.accessToken,
-          honeypot: honeypot,
-          payload: {
-            email: email,
-            timestamp: new Date().toISOString()
-          }
-        })
-      });
-      
-      const submitResult = await submitResponse.json();
-      
-      if (submitResult.ok) {
-        document.getElementById('status').textContent = '✓ Success!';
-        e.target.reset();
-        document.getElementById('submit-btn').disabled = true;
-        captureToken = null;
-      } else {
-        alert('Submission failed');
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      alert('An error occurred');
-    }
-  });
-</script>
-```
+---
 
 ## Support
 
-If you need keys or policy updates, contact the Catalyst Capture admin.
+Need help? Contact the Catalyst Capture admin for:
+- Site keys and secret keys
+- Adding domains to CORS allowlist
+- Policy updates
+- Technical support
