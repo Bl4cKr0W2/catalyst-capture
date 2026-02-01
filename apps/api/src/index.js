@@ -197,42 +197,47 @@ app.get("/v1/embed", (req, res) => {
   const apiBase = `${req.protocol}://${req.get('host')}`;
   
   const html = `
-  <div class="catalyst-capture" data-site-key="${siteKey}">
-    <div class="cc-widget">
-      <button type="button" class="cc-button" onclick="window.catalystVerify_${siteKey.replace(/[^a-z0-9]/gi, '')}()">Verify</button>
-      <input type="hidden" class="cc-token" />
-    </div>
-  </div>
+  <div class="catalyst-capture-container" data-site-key="${siteKey}"></div>
   <script>
     (function(){
       var siteKey = "${siteKey}";
       var apiBase = "${apiBase}";
-      var root = document.querySelector("${target}") || document.currentScript.parentElement;
+      var container = document.currentScript.previousElementSibling;
+      var root = document.querySelector("${target}");
+      if (!root) root = container.parentElement;
       if (!root) return;
       
-      // Create the widget HTML
+      // Clear and create the widget
+      if (container) container.remove();
+      
       var widget = document.createElement('div');
       widget.className = 'cc-micro-ui';
-      widget.style.cssText = 'margin: 10px 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb;';
+      widget.style.cssText = 'margin: 10px 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; display: inline-flex; align-items: center; gap: 10px;';
       
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'cc-button';
       button.textContent = 'Verify';
-      button.style.cssText = 'padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;';
+      button.style.cssText = 'padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;';
       
       var status = document.createElement('span');
       status.className = 'cc-status';
-      status.style.cssText = 'margin-left: 10px; font-size: 14px; color: #6b7280;';
+      status.style.cssText = 'font-size: 14px; color: #6b7280;';
+      
+      var tokenInput = document.createElement('input');
+      tokenInput.type = 'hidden';
+      tokenInput.className = 'cc-token';
       
       widget.appendChild(button);
       widget.appendChild(status);
+      widget.appendChild(tokenInput);
       root.appendChild(widget);
       
       // Handle verification
-      window['catalystVerify_' + siteKey.replace(/[^a-z0-9]/gi, '')] = function() {
+      button.onclick = function() {
         button.disabled = true;
         button.textContent = 'Verifying...';
+        button.style.cursor = 'wait';
         status.textContent = '';
         
         fetch(apiBase + '/v1/challenge', {
@@ -245,12 +250,12 @@ app.get("/v1/embed", (req, res) => {
           if (data.ok && data.token) {
             button.textContent = '✓ Verified';
             button.style.background = '#10b981';
+            button.style.cursor = 'default';
             status.textContent = '✓ Success';
             status.style.color = '#10b981';
             
             // Store token
-            var input = root.querySelector('.cc-token');
-            if (input) input.value = data.token;
+            tokenInput.value = data.token;
             
             // Emit event
             if (window.postMessage) {
@@ -269,13 +274,11 @@ app.get("/v1/embed", (req, res) => {
           button.disabled = false;
           button.textContent = 'Verify (retry)';
           button.style.background = '#ef4444';
+          button.style.cursor = 'pointer';
           status.textContent = '✗ Failed';
           status.style.color = '#ef4444';
         });
       };
-      
-      // Auto-click for convenience (optional)
-      button.onclick = window['catalystVerify_' + siteKey.replace(/[^a-z0-9]/gi, '')];
     })();
   </script>
   `;
