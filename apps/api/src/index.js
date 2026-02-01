@@ -214,8 +214,9 @@ app.get("/v1/embed", (req, res) => {
       if (!root) root = container.parentElement;
       if (!root) return;
       
-      // Clear and create the widget
-      if (container) container.remove();
+      // Clear container (don't remove it - causes issues with React/Vue)
+      container.innerHTML = '';
+      container.style.display = 'none';
       
       var widget = document.createElement('div');
       widget.className = 'cc-micro-ui';
