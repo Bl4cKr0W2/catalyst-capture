@@ -209,14 +209,15 @@ app.get("/v1/embed", (req, res) => {
     (function(){
       var siteKey = "${siteKey}";
       var apiBase = "${apiBase}";
-      var container = document.currentScript.previousElementSibling;
       var root = document.querySelector("${target}");
-      if (!root) root = container.parentElement;
       if (!root) return;
       
-      // Clear container (don't remove it - causes issues with React/Vue)
-      container.innerHTML = '';
-      container.style.display = 'none';
+      // Find and hide the marker container
+      var container = root.querySelector('.catalyst-capture-container[data-site-key="${siteKey}"]');
+      if (container) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+      }
       
       var widget = document.createElement('div');
       widget.className = 'cc-micro-ui';
