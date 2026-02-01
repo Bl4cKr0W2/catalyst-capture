@@ -140,13 +140,12 @@ async function storeSubmission(entry) {
     return;
   }
   await pool.query(
-    `INSERT INTO submissions (event_id, site_key, payload, fingerprint, ip, ua, origin)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    `INSERT INTO submissions (event_id, site_key, payload, ip, ua, origin)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
     [
       entry.eventId,
       entry.siteKey,
       entry.payload,
-      entry.fingerprint || null,
       entry.ip || null,
       entry.ua || null,
       entry.origin || null,
