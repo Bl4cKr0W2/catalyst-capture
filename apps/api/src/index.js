@@ -220,17 +220,17 @@ app.get("/v1/embed", (req, res) => {
       
       var widget = document.createElement('div');
       widget.className = 'cc-micro-ui';
-      widget.style.cssText = 'margin: 10px 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; display: inline-flex; align-items: center; gap: 10px;';
+      widget.style.cssText = 'display: inline-flex; align-items: center; gap: 8px;';
       
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'cc-button';
-      button.textContent = 'Verify';
-      button.style.cssText = 'padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;';
+      button.textContent = 'Verify you're human';
+      button.style.cssText = 'padding: 0; background: none; color: #737373; border: none; cursor: pointer; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; transition: color 0.2s;';
       
       var status = document.createElement('span');
       status.className = 'cc-status';
-      status.style.cssText = 'font-size: 14px; color: #6b7280;';
+      status.style.cssText = 'font-size: 14px; color: #737373;';
       
       var tokenInput = document.createElement('input');
       tokenInput.type = 'hidden';
@@ -246,6 +246,7 @@ app.get("/v1/embed", (req, res) => {
         button.disabled = true;
         button.textContent = 'Verifying...';
         button.style.cursor = 'wait';
+        button.style.textDecoration = 'none';
         status.textContent = '';
         
         fetch(apiBase + '/v1/challenge', {
@@ -256,11 +257,12 @@ app.get("/v1/embed", (req, res) => {
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (data.ok && data.token) {
-            button.textContent = '✓ Verified';
-            button.style.background = '#10b981';
+            button.textContent = 'Verified';
+            button.style.color = '#737373';
             button.style.cursor = 'default';
-            status.textContent = '✓ Success';
-            status.style.color = '#10b981';
+            button.style.textDecoration = 'none';
+            status.textContent = '✓';
+            status.style.color = '#737373';
             
             // Store token
             tokenInput.value = data.token;
@@ -280,11 +282,12 @@ app.get("/v1/embed", (req, res) => {
         .catch(function(err) {
           console.error('Verification error:', err);
           button.disabled = false;
-          button.textContent = 'Verify (retry)';
-          button.style.background = '#ef4444';
+          button.textContent = 'Verify you're human (retry)';
+          button.style.color = '#737373';
           button.style.cursor = 'pointer';
-          status.textContent = '✗ Failed';
-          status.style.color = '#ef4444';
+          button.style.textDecoration = 'underline';
+          status.textContent = '✗';
+          status.style.color = '#737373';
         });
       };
     })();

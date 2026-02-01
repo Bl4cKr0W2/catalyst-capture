@@ -48,18 +48,102 @@ Add an empty div where you want the verification widget:
 
 **Important:** The `/v1/embed` endpoint returns **complete, ready-to-use HTML** with all JavaScript included. You just need to fetch it and inject it into your page.
 
+### Vanilla JavaScript / Plain HTML
+
 ```html
 <script>
 (async function() {
   try {
     const response = await fetch('https://captured.thecatalyst.dev/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
     const html = await response.text();
-    document.getElementById('capture-slot').innerHTML = html;
+    const container = document.getElementById('capture-slot');
+    container.innerHTML = html;
+    
+    // Execute scripts (important for frameworks that strip scripts)
+    const scripts = container.querySelectorAll('script');
+    scripts.forEach((oldScript) => {
+      const newScript = document.createElement('script');
+      newScript.textContent = oldScript.textContent;
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
   } catch (error) {
     console.error('Error loading widget:', error);
   }
 })();
 </script>
+```
+
+### React / Vue / Angular
+
+**Important:** `innerHTML` (or `dangerouslySetInnerHTML` in React) **does not execute `<script>` tags** for security reasons. You must manually execute them.
+
+**React with useRef (recommended):**
+
+```javascript
+import { useEffect, useRef } from 'react';
+
+function MyForm() {
+  const widgetContainerRef = useRef(null);
+  
+  useEffect(() => {
+    const loadWidget = async () => {
+      try {
+        const response = await fetch('/api/catalyst/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
+        const html = await response.text();
+        
+        const container = widgetContainerRef.current;
+        if (!container) return;
+        
+        container.innerHTML = html;
+        
+        // Extract and execute scripts manually
+        const scripts = container.querySelectorAll('script');
+        scripts.forEach((oldScript) => {
+          const newScript = document.createElement('script');
+          newScript.textContent = oldScript.textContent;
+          oldScript.parentNode.replaceChild(newScript, oldScript);
+        });
+      } catch (error) {
+        console.error('Error loading widget:', error);
+      }
+    };
+    
+    loadWidget();
+  }, []);
+  
+  return <div ref={widgetContainerRef} id="capture-slot"></div>;
+}
+```
+
+**Why useRef?** The widget's script removes and recreates DOM elements, which conflicts with React's virtual DOM. Using `useRef` tells React to let the widget manage that part of the DOM freely.
+
+**Vue / Angular:**
+
+```javascript
+const loadWidget = async () => {
+  try {
+    const response = await fetch('/api/catalyst/v1/embed?siteKey=YOUR_SITE_KEY&target=%23capture-slot');
+    const html = await response.text();
+    
+    const container = document.getElementById('capture-slot');
+    container.innerHTML = html;
+    
+    // Extract and execute scripts manually
+    const scripts = container.querySelectorAll('script');
+    scripts.forEach((oldScript) => {
+      const newScript = document.createElement('script');
+      newScript.textContent = oldScript.textContent;
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
+  } catch (error) {
+    console.error('Error loading widget:', error);
+  }
+};
+
+// Call in mounted() (Vue) or ngOnInit() (Angular)
+mounted() {
+  loadWidget();
+}
 ```
 
 **What happens:** 
@@ -68,7 +152,7 @@ Add an empty div where you want the verification widget:
 3. On success, the button turns green and emits a `catalyst-verified` event
 4. **The widget is fully functional** - you just need to listen for the event (Step 3)
 
-**If using a proxy:** Replace `https://captured.thecatalyst.dev` with your proxy path (e.g., `/api/catalyst`)
+**If using a proxy:** Replace `https://captured.thecatalyst.dev` with your proxy path (e.g., `/api/catalyst`). The widget will automatically detect the proxy and use relative URLs for all API calls - no client-side URL rewriting needed
 
 ## Step 3: Listen for Verification
 
@@ -475,6 +559,17 @@ Submit your form data after verification.
 - Confirm site key is correct
 - Check network tab - should see successful request to `/v1/embed`
 
+**Verify button doesn't appear (React/Vue/Angular):**
+- ⚠️ **Common issue:** `innerHTML` or `dangerouslySetInnerHTML` doesn't execute `<script>` tags
+- ✅ **Solution:** Manually execute scripts after setting innerHTML (see Step 2 - React/Vue/Angular section)
+- Check if the HTML is loading: `console.log(html)` after fetch
+- Check if `#capture-slot` div exists in the DOM when you try to inject
+
+**React error: "The node to be removed is not a child of this node":**
+- ⚠️ **Common issue:** Widget script removes/recreates DOM elements, conflicting with React's virtual DOM
+- ✅ **Solution:** Use `useRef` instead of regular div (see Step 2 - React section)
+- This allows the widget to manipulate the DOM without React interference
+
 **Button stays disabled after clicking Verify:**
 - ✅ Did you add the `window.addEventListener('message')` code? **This is required!**
 - Check if `catalyst-verified` event fires: `console.log('Event:', event.data)` in the listener
@@ -496,6 +591,13 @@ Submit your form data after verification.
 **CORS errors:**
 - Contact admin to add your domain to allowed origins
 - Applies to: `www.yourdomain.com`, `yourdomain.com`, `https://yourdomain.com`
+
+**Using a proxy/reverse proxy:**
+- The widget automatically detects when accessed through a proxy (by checking the `Referer` and `X-Forwarded-Host` headers)
+- When detected, it uses relative URLs (e.g., `/api/catalyst/v1/challenge`) instead of absolute URLs
+- This means you don't need any client-side string replacement or URL rewriting
+- Just fetch the widget through your proxy path and it will work automatically
+- Example: If your site proxies `/api/catalyst` to `https://captured.thecatalyst.dev`, just use `fetch('/api/catalyst/v1/embed?siteKey=...')` and the widget will handle the rest
 
 ---
 
