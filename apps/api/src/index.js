@@ -11,6 +11,9 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const app = express();
 const port = process.env.PORT || 4000;
 
+// Trust proxy for rate limiting when behind nginx
+app.set('trust proxy', true);
+
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((o) => o.trim())
