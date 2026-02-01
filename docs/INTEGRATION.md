@@ -115,7 +115,7 @@ function MyForm() {
 }
 ```
 
-**Why useRef?** The widget's script removes and recreates DOM elements, which conflicts with React's virtual DOM. Using `useRef` tells React to let the widget manage that part of the DOM freely.
+**Why useRef?** While not strictly required (the widget no longer removes DOM elements), using `useRef` is still recommended as best practice. It clearly signals to React that this part of the DOM is managed by external code, preventing potential conflicts with React's reconciliation.
 
 **Vue / Angular:**
 
@@ -566,9 +566,9 @@ Submit your form data after verification.
 - Check if `#capture-slot` div exists in the DOM when you try to inject
 
 **React error: "The node to be removed is not a child of this node":**
-- ⚠️ **Common issue:** Widget script removes/recreates DOM elements, conflicting with React's virtual DOM
-- ✅ **Solution:** Use `useRef` instead of regular div (see Step 2 - React section)
-- This allows the widget to manipulate the DOM without React interference
+- ⚠️ **Rare issue:** Older versions of the widget removed DOM elements, conflicting with React's virtual DOM
+- ✅ **Solution:** Use `useRef` instead of regular div (see Step 2 - React section) - this is now recommended best practice rather than strictly required
+- If you're still seeing this error, the server may need updating to the latest widget version
 
 **Button stays disabled after clicking Verify:**
 - ✅ Did you add the `window.addEventListener('message')` code? **This is required!**
