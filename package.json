@@ -1,0 +1,12 @@
+{
+  "name": "catalyst-capture",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "pnpm --filter @catalyst-capture/api dev",
+    "start": "pnpm --filter @catalyst-capture/api start",
+    "test": "C:/Projects/catalyst-capture/.venv/Scripts/python.exe tests/test_endpoints.py",
+    "deploy": "ssh -i \"$env:USERPROFILE\\.ssh\\catalyst_capture_dev\" root@167.99.112.163 \"cd /opt/catalyst/catalyst-capture && git pull && docker compose up -d --build\""
+  }
+}
