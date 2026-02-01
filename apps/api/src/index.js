@@ -195,10 +195,10 @@ app.get("/v1/embed", (req, res) => {
 
   const target = req.query.target || "#capture-slot";
   
-  // Detect if being accessed through a proxy by checking the path prefix
-  // If the request comes from /api/catalyst/v1/embed, use relative URLs
-  const originalUrl = req.originalUrl || req.url;
-  const isProxied = originalUrl.includes('/api/catalyst');
+  // Detect if being accessed through a proxy by checking Host header
+  // If Host is not our direct domain, it's being proxied
+  const host = req.get('host') || '';
+  const isProxied = !host.includes('captured.thecatalyst.dev');
   
   // Use relative URL if proxied, otherwise use full URL
   const apiBase = isProxied ? '/api/catalyst' : `${req.protocol}://${req.get('host')}`;
